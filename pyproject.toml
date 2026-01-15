@@ -1,0 +1,19 @@
+[project]
+name = "magos-calendar"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.10"
+dependencies = [
+    "alembic>=1.18.1",
+    "asyncpg>=0.31.0",
+    "fastapi>=0.128.0",
+    "google-api-python-client>=2.188.0",
+    "google-auth-httplib2>=0.3.0",
+    "google-auth-oauthlib>=1.2.3",
+    "gunicorn>=23.0.0",
+    "loguru>=0.7.3",
+    "psycopg2-binary>=2.9.11",
+    "pydantic-settings>=2.12.0",
+    "sqlmodel>=0.0.31",
+    "uvicorn>=0.40.0",
+]

@@ -1,0 +1,35 @@
+services:
+  db:
+    build:
+      context: .
+      dockerfile: docker-files/Dockerfile.postgres
+    container_name: "${DEV_CONTAINER_NAME}_db"
+    env_file: .env
+    ports:
+      - "${DEV_DB_PORT}:5432"
+    volumes:
+      - magos_calendar_db_dev:/var/lib/postgresql/data
+  app:
+    build:
+      context: .
+      dockerfile: docker-files/Dockerfile.app
+      target: development
+    container_name: ${DEV_CONTAINER_NAME}
+    ports:
+      - "${DEV_PORT}:8000"
+    environment:
+      - TZ=Europe/Moscow
+    env_file:
+      - .env
+    volumes:
+      - ./app:/code/app
+      - ./logs:/code/logs
+      - ./creds:/code/creds
+      - ./migrations:/code/migrations
+      - ./alembic.ini:/code/alembic.ini
+    depends_on:
+      - db
+    restart: no
+
+volumes:
+  magos_calendar_db_dev:

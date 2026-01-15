@@ -1,0 +1,22 @@
+__pycache__
+.venv
+.env
+# Логи
+logs/*
+!logs/.gitkeep
+
+# Секреты
+# 1. Игнорируем всё внутри creds
+creds/*
+# 2. Но не игнорируем сам файл .gitkeep (чтобы папка осталась в git)
+!creds/.gitkeep
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+to_llm.md

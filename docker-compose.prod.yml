@@ -1,0 +1,31 @@
+services:
+  db:
+    build:
+      context: .
+      dockerfile: docker-files/Dockerfile.postgres
+    container_name: "${PROD_CONTAINER_NAME}_db"
+    restart: always
+    env_file: .env
+    #    ports:                       # <--- не открываем порты наружу
+    #      - "${PROD_DB_PORT}:5432"   # <--- База доступна только внутри сети Docker
+    volumes:
+      - magos_calendar_db_prod:/var/lib/postgresql/data
+  app:
+    build:
+      context: .
+      dockerfile: docker-files/Dockerfile.app
+      target: production
+    container_name: ${PROD_CONTAINER_NAME}
+    ports:
+      - "${PROD_PORT}:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/code/logs
+      - ./creds:/code/creds
+    depends_on:
+      - db
+    restart: always
+
+volumes:
+  magos_calendar_db_prod:
