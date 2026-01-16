@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Операционный план</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+
+    <style>
+        :root {
+            --pico-font-size: 15px;
+            --pico-line-height: 1.4;
+            --dot-size: 10px;
+        }
+
+        main.container { max-width: 1200px; padding-top: 20px; }
+
+        /* ЛИПКАЯ ПАНЕЛЬ */
+        .sticky-controls {
+            position: sticky; top: 0; z-index: 100;
+            background-color: var(--pico-background-color);
+            padding: 15px 0; border-bottom: 1px solid var(--pico-muted-border-color);
+            margin-bottom: 20px; display: flex; justify-content: space-between;
+            align-items: center; flex-wrap: wrap; gap: 1rem;
+        }
+
+        .filter-select-wrapper { flex-grow: 1; max-width: 250px; }
+        .filter-select-wrapper select { margin-bottom: 0; font-weight: bold; cursor: pointer; }
+
+        .right-controls { display: flex; align-items: center; gap: 10px; }
+        .month-nav { display: flex; align-items: center; gap: 10px; }
+        .month-nav input { margin-bottom: 0; width: auto; font-weight: bold; cursor: pointer; }
+        .month-nav button { padding: 5px 15px; margin-bottom: 0; }
+        .hidden { display: none !important; }
+
+        /* СЕТКА */
+        .day-group {
+            display: grid; grid-template-columns: 100px 1fr;
+            border-bottom: 1px solid var(--pico-muted-border-color);
+            padding: 15px 0; align-items: baseline;
+        }
+        .day-group:last-child { border-bottom: none; }
+
+        .day-label {
+            font-weight: 800; font-size: 0.9rem;
+            color: var(--pico-h1-color); text-transform: uppercase;
+            position: sticky; top: 80px;
+        }
+        .day-weekday { font-size: 0.75rem; color: var(--pico-muted-color); font-weight: normal; }
+        .events-list { display: flex; flex-direction: column; gap: 8px; }
+
+        .event-row {
+            display: grid; grid-template-columns: 130px 1fr auto;
+            gap: 15px; align-items: center; padding: 8px 12px;
+            border-radius: 6px; background-color: rgba(128, 128, 128, 0.03);
+            transition: background 0.2s;
+        }
+        .event-row:hover { background-color: var(--pico-card-sectioning-background-color); }
+
+        .event-time-wrapper { display: flex; align-items: center; font-size: 0.85rem; font-variant-numeric: tabular-nums; color: var(--pico-color); }
+        .status-dot { width: var(--dot-size); height: var(--dot-size); border-radius: 50%; margin-right: 10px; flex-shrink: 0; }
+
+        .dot-new { background-color: #007bff; box-shadow: 0 0 6px rgba(0,123,255, 0.4); }
+        .dot-confirmed { background-color: #198754; }
+        .dot-changed { background-color: #f5a623; box-shadow: 0 0 6px rgba(245, 166, 35, 0.4); }
+        .dot-cancelled { background-color: #e63757; }
+        .dot-completed { background-color: #adb5bd; }
+        .dot-missed { background-color: #343a40; }
+
+        .event-summary { font-weight: 500; }
+        .event-actions { display: flex; gap: 10px; align-items: center; }
+
+        .btn-link { border: none; background: none; padding: 5px; font-size: 1.2rem; text-decoration: none; color: var(--pico-muted-color); }
+        .btn-link:hover { color: var(--pico-primary); transform: scale(1.1); }
+
+        .btn-confirm {
+            padding: 4px 12px; font-size: 0.75rem; border-radius: 4px;
+            border: 1px solid var(--pico-primary-border);
+            background-color: var(--pico-primary-background);
+            color: var(--pico-primary-inverse); cursor: pointer;
+        }
+        .btn-confirm:hover { background-color: var(--pico-primary-hover-background); }
+
+        .row-archived .event-summary { color: var(--pico-muted-color); text-decoration: line-through; }
+        .row-archived .status-dot { opacity: 0.5; box-shadow: none; }
+
+        .empty-state { text-align: center; padding: 3rem; color: var(--pico-muted-color); font-style: italic; }
+    </style>
+</head>
+<body>
+
+<main class="container">
+    <h3 style="margin-bottom: 20px;">📅 Операционный план</h3>
+
+    <div class="sticky-controls">
+        <div class="filter-select-wrapper">
+            <select id="filter-select" onchange="handleFilterChange()">
+                <option value="active">📥 Актуальные</option>
+                <option value="new">🆕 Новые</option>
+                <option value="changed">✏️ Обновленные</option>
+                <option value="archive">🗄️ Архив</option>
+            </select>
+        </div>
+
+        <div class="right-controls">
+            <div class="month-nav" id="month-nav-container">
+                <button class="outline" onclick="changeMonth(-1)">◀</button>
+                <input type="month" id="month-picker" onchange="handleMonthChange()">
+                <button class="outline" onclick="changeMonth(1)">▶</button>
+            </div>
+            <button class="outline contrast" onclick="loadEvents()" title="Обновить список" id="refresh-btn">↻</button>
+        </div>
+    </div>
+
+    <div id="timeline-container"></div>
+</main>
+
+<script>
+    const API_KEY = "{{ api_key }}";
+    let currentFilter = 'active';
+    let currentDate = new Date();
+
+    const STATUS_DOTS = {
+        'new': 'dot-new', 'confirmed': 'dot-confirmed', 'changed': 'dot-changed',
+        'cancelled': 'dot-cancelled', 'completed': 'dot-completed', 'missed': 'dot-missed'
+    };
+
+    function initDatePicker() {
+        const picker = document.getElementById('month-picker');
+        const yyyy = currentDate.getFullYear();
+        const mm = String(currentDate.getMonth() + 1).padStart(2, '0');
+        picker.value = `${yyyy}-${mm}`;
+    }
+
+    function handleMonthChange() {
+        const picker = document.getElementById('month-picker');
+        if (picker.value) {
+            const [y, m] = picker.value.split('-');
+            currentDate.setFullYear(parseInt(y));
+            currentDate.setMonth(parseInt(m) - 1);
+            loadEvents();
+        }
+    }
+
+    function changeMonth(delta) {
+        currentDate.setMonth(currentDate.getMonth() + delta);
+        initDatePicker();
+        loadEvents();
+    }
+
+    function handleFilterChange() {
+        const select = document.getElementById('filter-select');
+        currentFilter = select.value;
+        const navContainer = document.getElementById('month-nav-container');
+
+        if (['new', 'changed'].includes(currentFilter)) {
+            navContainer.classList.add('hidden');
+        } else {
+            navContainer.classList.remove('hidden');
+        }
+        loadEvents();
+    }
+
+    async function loadEvents() {
+        const refreshBtn = document.getElementById('refresh-btn');
+        const container = document.getElementById('timeline-container');
+        refreshBtn.setAttribute('aria-busy', 'true');
+
+        try {
+            let url = '/events/';
+            const params = new URLSearchParams();
+
+            if (currentFilter === 'new') params.append('status', 'new');
+            if (currentFilter === 'changed') params.append('status', 'changed');
+            if (currentFilter === 'archive') params.append('show_archive', 'true');
+
+            if (!['new', 'changed'].includes(currentFilter)) {
+                params.append('year', currentDate.getFullYear());
+                params.append('month', currentDate.getMonth() + 1);
+            }
+
+            if (params.toString()) url += `?${params.toString()}`;
+
+            const response = await fetch(url, { headers: { 'X-API-KEY': API_KEY } });
+            if (!response.ok) throw new Error('Ошибка связи с сервером');
+
+            const data = await response.json();
+            renderTimeline(data);
+
+        } catch (error) {
+            console.error(error);
+            container.innerHTML = `<article style="color:red; text-align:center">Ошибка: ${error.message}</article>`;
+        } finally {
+            refreshBtn.setAttribute('aria-busy', 'false');
+        }
+    }
+
+    function getUtcDateKey(dateObj) {
+        return dateObj.toISOString().split('T')[0];
+    }
+    function getLocalDateKey(dateObj) {
+        const y = dateObj.getFullYear();
+        const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const d = String(dateObj.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    }
+
+    function renderTimeline(events) {
+        const container = document.getElementById('timeline-container');
+        container.innerHTML = '';
+
+        if (events.length === 0) {
+            let emptyText = 'Список пуст';
+            if (currentFilter === 'new') emptyText = 'Новых событий нет 🏖️';
+            if (currentFilter === 'changed') emptyText = 'Изменений нет ✅';
+            if (currentFilter === 'archive') emptyText = 'Архив за этот месяц пуст';
+            container.innerHTML = `<div class="empty-state">${emptyText}</div>`;
+            return;
+        }
+
+        const grouped = {};
+
+        events.forEach(event => {
+            const startDt = new Date(event.start_time);
+            const endDt = new Date(event.end_time);
+            let loopStart, loopEnd;
+
+            if (event.is_all_day) {
+                loopStart = new Date(Date.UTC(startDt.getUTCFullYear(), startDt.getUTCMonth(), startDt.getUTCDate()));
+                loopEnd = new Date(Date.UTC(endDt.getUTCFullYear(), endDt.getUTCMonth(), endDt.getUTCDate()) - 1);
+            } else {
+                loopStart = new Date(startDt.getFullYear(), startDt.getMonth(), startDt.getDate());
+                if (endDt.getHours() === 0 && endDt.getMinutes() === 0 && endDt.getSeconds() === 0) {
+                     loopEnd = new Date(endDt.getTime() - 1);
+                     loopEnd.setHours(0,0,0,0);
+                } else {
+                     loopEnd = new Date(endDt.getFullYear(), endDt.getMonth(), endDt.getDate());
+                }
+            }
+
+            const oneDay = 1000 * 60 * 60 * 24;
+            const diffTime = Math.abs(loopEnd - loopStart);
+
+            let diffDays;
+            if (event.is_all_day) {
+                diffDays = Math.ceil(diffTime / oneDay);
+                if (diffDays < 1) diffDays = 1;
+            } else {
+                diffDays = Math.ceil(diffTime / oneDay) + 1;
+            }
+
+            for (let i = 0; i < diffDays; i++) {
+                let dateKey;
+                if (event.is_all_day) {
+                    let d = new Date(loopStart);
+                    d.setUTCDate(loopStart.getUTCDate() + i);
+                    dateKey = getUtcDateKey(d);
+                } else {
+                    let d = new Date(loopStart);
+                    d.setDate(loopStart.getDate() + i);
+                    dateKey = getLocalDateKey(d);
+                }
+
+                if (!grouped[dateKey]) grouped[dateKey] = [];
+                let displaySummary = event.summary;
+                if (diffDays > 1) {
+                     displaySummary += ` <span style="color:var(--pico-muted-color); font-size:0.8em; white-space:nowrap;">(день ${i+1}/${diffDays})</span>`;
+                }
+
+                grouped[dateKey].push({
+                    ...event,
+                    summary: displaySummary,
+                    is_virtual_split: true
+                });
+            }
+        });
+
+        const dates = Object.keys(grouped).sort();
+        if (currentFilter === 'archive') dates.reverse();
+
+        dates.forEach(dateKey => {
+            const dayEvents = grouped[dateKey];
+
+            dayEvents.sort((a, b) => {
+                const timeA = new Date(a.start_time).getTime();
+                const timeB = new Date(b.start_time).getTime();
+                if (timeA !== timeB) return timeA - timeB;
+                if (a.is_all_day && !b.is_all_day) return -1;
+                if (!a.is_all_day && b.is_all_day) return 1;
+                return 0;
+            });
+
+            const dateObj = new Date(dateKey);
+            const dayNum = dateObj.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }).replace('.', '');
+            const weekDay = dateObj.toLocaleDateString('ru-RU', { weekday: 'short' }).toUpperCase();
+
+            let eventsHtml = '';
+
+            dayEvents.forEach(event => {
+                const dotClass = STATUS_DOTS[event.status] || 'dot-completed';
+
+                let timeStr = '';
+                if (event.is_all_day) {
+                    timeStr = 'Весь день';
+                } else {
+                    const s = new Date(event.start_time);
+                    const e = new Date(event.end_time);
+                    const tOpt = {hour:'2-digit', minute:'2-digit'};
+                    timeStr = `${s.toLocaleTimeString('ru-RU', tOpt)}–${e.toLocaleTimeString('ru-RU', tOpt)}`;
+                }
+
+                const isArchived = ['cancelled', 'completed', 'missed'].includes(event.status);
+                const rowClass = isArchived ? 'row-archived' : '';
+
+                let actionBtn = '';
+
+                // --- ЛОГИКА ОТОБРАЖЕНИЯ КНОПКИ ---
+                // Кнопка видна ТОЛЬКО если выбрана вкладка "Новые" или "Обновленные"
+                // И если статус события соответствующий.
+                const isActionTab = ['new', 'changed'].includes(currentFilter);
+
+                if (isActionTab && ['new', 'changed'].includes(event.status)) {
+                    actionBtn = `<button class="btn-confirm" onclick="confirmEvent(${event.event_id})">Подтвердить</button>`;
+                }
+
+                const googleLink = `<a href="${event.link}" target="_blank" class="btn-link" title="Открыть в Google Calendar">🔗</a>`;
+
+                eventsHtml += `
+                    <div class="event-row ${rowClass}">
+                        <div class="event-time-wrapper">
+                            <div class="status-dot ${dotClass}" title="${event.status}"></div>
+                            ${timeStr}
+                        </div>
+                        <div class="event-summary">
+                            ${event.summary}
+                        </div>
+                        <div class="event-actions">
+                            ${googleLink}
+                            ${actionBtn}
+                        </div>
+                    </div>
+                `;
+            });
+
+            const dayBlock = `
+                <div class="day-group">
+                    <div class="day-label">
+                        ${dayNum}<br>
+                        <span class="day-weekday">${weekDay}</span>
+                    </div>
+                    <div class="events-list">
+                        ${eventsHtml}
+                    </div>
+                </div>
+            `;
+            container.insertAdjacentHTML('beforeend', dayBlock);
+        });
+    }
+
+    async function confirmEvent(id) {
+        try {
+            const response = await fetch(`/events/${id}/confirm`, {
+                method: 'POST',
+                headers: { 'X-API-KEY': API_KEY }
+            });
+            if (response.ok) loadEvents();
+        } catch (e) {
+            alert('Ошибка сети');
+        }
+    }
+
+    initDatePicker();
+    loadEvents();
+</script>
+
+</body>
+</html>

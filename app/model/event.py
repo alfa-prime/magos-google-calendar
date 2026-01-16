@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime
 from enum import Enum
 from typing import Optional
@@ -18,23 +19,24 @@ class EventStatus(str, Enum):
 class EventModel(SQLModel, table=True):
     __tablename__ = "events"
 
+    # Внутренний ID (Primary Key)
     event_id: Optional[int] = Field(
         default=None,
         sa_column=Column(BigInteger, Identity(always=True), primary_key=True)
     )
 
-    # ID из Google (для поиска дублей)
+    # Google ID
     google_event_id: str = Field(unique=True, index=True)
 
-    # Статус (по умолчанию NEW)
     status: EventStatus = Field(default=EventStatus.NEW, index=True)
-
     summary: str = Field(index=True)
 
-    # Описание может быть длинным/пустым
-    # description: Optional[str] = Field(default=None, sa_type=Text)
+    # Флаг "Весь день"
+    is_all_day: bool = Field(default=False)
 
-    # Время с часовым поясом
+    link: Optional[str] = Field(default=None)
+
+    # Время
     start_time: Optional[datetime] = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True))
@@ -43,8 +45,6 @@ class EventModel(SQLModel, table=True):
         default=None,
         sa_column=Column(DateTime(timezone=True))
     )
-
-    link: Optional[str] = Field(default=None)
 
     updated_at: datetime = Field(
         sa_column=Column(
@@ -55,15 +55,13 @@ class EventModel(SQLModel, table=True):
     )
 
 
-# СХЕМА ДЛЯ ОТВЕТА API (Response)
+# Схема для ответа API
 class EventRead(SQLModel):
-    """
-    То, что видит фронтенд.
-    """
     event_id: int
     google_event_id: str
     status: EventStatus
     summary: str
+    is_all_day: bool
     link: Optional[str] = None
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
