@@ -1,3 +1,3 @@
-from .event import EventModel
+from .event import EventModel, EventRead, EventStatus
 
-__all__ = ["EventModel"]
+__all__ = ["EventModel", "EventRead", "EventStatus"]
